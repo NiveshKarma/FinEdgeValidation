@@ -44,7 +44,6 @@ def is_due(cron_string, last_run_str):
         next_run = iter.get_next(datetime.datetime)
         return now >= next_run
     except Exception as e:
-        print(f"Error parsing cron: {e}")
         return False
 
 def is_safe_sql(sql_query):
@@ -96,6 +95,7 @@ def main():
     conn = None
     try:
         conn = get_db_connection()
+        conn.autocommit = True # This prevents the "transaction aborted" error chain
     except Exception as e:
         print(f"DB connection failed: {e}")
         return
@@ -107,13 +107,15 @@ def main():
         if is_active.lower() != 'true' or not is_due(cron, last_run):
             continue
 
-        if not is_safe_sql(sql_template):
+        clean_sql = sql_template.strip()
+
+        if not is_safe_sql(clean_sql):
             log_result(sheets_service, SPREADSHEET_ID, rule_id, rule_desc, "BLOCKED", 0, "Security: Only SELECT/WITH allowed.")
             continue
 
         print(f"Running Rule {rule_id}...")
         try:
-            df = pd.read_sql_query(sql_template, conn)
+            df = pd.read_sql_query(clean_sql, conn)
             file_id = upload_to_drive(drive_service, f"Rule_{rule_id}", df.to_dict(orient='records'), DRIVE_FOLDER_ID)
             
             # Update last_run
@@ -124,6 +126,7 @@ def main():
             
             log_result(sheets_service, SPREADSHEET_ID, rule_id, rule_desc, "SUCCESS", len(df))
         except Exception as e:
+            print(f"Rule {rule_id} failed: {e}")
             log_result(sheets_service, SPREADSHEET_ID, rule_id, rule_desc, "FAILED", 0, str(e))
 
     if conn: conn.close()
