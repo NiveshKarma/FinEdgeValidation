@@ -1,7 +1,7 @@
 name: Data Validation Pipeline
 on:
   schedule:
-    - cron: '0 * * * *' # Every hour
+    - cron: '0 0 * * *' # Every hour
   workflow_dispatch:     # Manual run trigger
 
 jobs:
