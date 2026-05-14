@@ -1,0 +1,33 @@
+name: Data Validation Pipeline
+on:
+  schedule:
+    - cron: '0 * * * *' # Every hour
+  workflow_dispatch:     # Manual run trigger
+
+jobs:
+  run-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas psycopg2-binary google-api-python-client google-auth croniter
+
+      - name: Execute Validation Script
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_PORT: ${{ secrets.DB_PORT || 5432 }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+        run: python run_validation.py
