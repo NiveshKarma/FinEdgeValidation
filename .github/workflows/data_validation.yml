@@ -28,4 +28,7 @@ jobs:
           DB_PORT: ${{ secrets.DB_PORT || 5432 }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          # Seconds to pause between rules to stay under the Sheets 60 writes/min limit.
+          # Tune via a repo variable (Settings > Variables); defaults to 30.
+          RULE_DELAY_SECONDS: ${{ vars.RULE_DELAY_SECONDS || 30 }}
         run: python run_validation.py

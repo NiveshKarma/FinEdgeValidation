@@ -1,9 +1,11 @@
 import os
 import json
+import time
 import datetime
 import pandas as pd
 import psycopg2
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from google.oauth2 import service_account
 from croniter import croniter
 
@@ -12,6 +14,27 @@ from croniter import croniter
 # Google Drive folder is needed -- a service account has no Drive storage quota anyway.
 SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID')
 GCP_SERVICE_ACCOUNT_JSON = os.environ.get('GCP_SERVICE_ACCOUNT_JSON')
+# Sheets API allows 60 write requests/min/user. Each rule makes several writes
+# (create/clear/fill its result tab + last_run + log), so we pace rules apart to stay
+# under the limit. Tune with RULE_DELAY_SECONDS (default 30s per rule).
+RULE_DELAY_SECONDS = float(os.environ.get('RULE_DELAY_SECONDS', '30'))
+
+
+def execute_with_retry(request, retries=6, base_wait=10):
+    """Execute a Google API request, backing off and retrying on 429/503 (rate limit /
+    transient) so a burst of writes doesn't hard-fail. Exponential: 10s, 20s, 40s, ..."""
+    for attempt in range(retries):
+        try:
+            return request.execute()
+        except HttpError as e:
+            status = getattr(getattr(e, 'resp', None), 'status', None)
+            if status in (429, 503) and attempt < retries - 1:
+                wait = base_wait * (2 ** attempt)
+                print(f"  Sheets API {status} (rate limit); backing off {wait}s "
+                      f"(attempt {attempt + 1}/{retries})")
+                time.sleep(wait)
+                continue
+            raise
 
 def get_google_service(service_name, version):
     """Authenticates using the service account JSON from env var."""
@@ -64,10 +87,9 @@ def log_result(sheets_service, spreadsheet_id, rule_id, rule_desc, status, row_c
         
     values = [[now, rule_id, rule_desc, status, row_count, error_msg]]
     body = {'values': values}
-    sheets_service.spreadsheets().values().append(
+    execute_with_retry(sheets_service.spreadsheets().values().append(
         spreadsheetId=spreadsheet_id, range='Results Log!A:F',
-        valueInputOption='USER_ENTERED', body=body
-    ).execute()
+        valueInputOption='USER_ENTERED', body=body))
 
 def write_results_to_sheet(sheets_service, spreadsheet_id, rule_id, df, existing_tabs, max_rows=500):
     """Write a rule's result rows into a dedicated tab in the SAME spreadsheet
@@ -77,12 +99,12 @@ def write_results_to_sheet(sheets_service, spreadsheet_id, rule_id, df, existing
     import re as _re, datetime as _dt
     tab = ("Res " + _re.sub(r"[^0-9A-Za-z_.\- ]", "_", str(rule_id)))[:95]
     if tab not in existing_tabs:
-        sheets_service.spreadsheets().batchUpdate(
+        execute_with_retry(sheets_service.spreadsheets().batchUpdate(
             spreadsheetId=spreadsheet_id,
-            body={"requests": [{"addSheet": {"properties": {"title": tab}}}]}).execute()
+            body={"requests": [{"addSheet": {"properties": {"title": tab}}}]}))
         existing_tabs.add(tab)
-    sheets_service.spreadsheets().values().clear(
-        spreadsheetId=spreadsheet_id, range=f"'{tab}'!A:ZZ").execute()
+    execute_with_retry(sheets_service.spreadsheets().values().clear(
+        spreadsheetId=spreadsheet_id, range=f"'{tab}'!A:ZZ"))
     total = len(df)
     ts = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
     header = f"Rule {rule_id} | updated {ts} | {total} violation row(s)"
@@ -96,9 +118,9 @@ def write_results_to_sheet(sheets_service, spreadsheet_id, rule_id, df, existing
         sub = df.head(max_rows).astype(object).where(pd.notnull(df.head(max_rows)), "")
         for rec in sub.itertuples(index=False, name=None):
             values.append([str(v) for v in rec])
-    sheets_service.spreadsheets().values().update(
+    execute_with_retry(sheets_service.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id, range=f"'{tab}'!A1",
-        valueInputOption="RAW", body={"values": values}).execute()
+        valueInputOption="RAW", body={"values": values}))
     return tab
 
 
@@ -144,6 +166,7 @@ def main():
 
         if not is_safe_sql(clean_sql):
             log_result(sheets_service, SPREADSHEET_ID, rule_id, rule_desc, "BLOCKED", 0, "Security: Only SELECT/WITH allowed.")
+            time.sleep(RULE_DELAY_SECONDS)
             continue
 
         print(f"Running Rule {rule_id}...")
@@ -162,10 +185,9 @@ def main():
                 print(f"Rule {rule_id}: {result_note}")
 
             # Update last_run so cron scheduling advances
-            sheets_service.spreadsheets().values().update(
+            execute_with_retry(sheets_service.spreadsheets().values().update(
                 spreadsheetId=SPREADSHEET_ID, range=f'Rules!E{i+2}',
-                valueInputOption='RAW', body={'values': [[datetime.datetime.now(datetime.timezone.utc).isoformat()]]}
-            ).execute()
+                valueInputOption='RAW', body={'values': [[datetime.datetime.now(datetime.timezone.utc).isoformat()]]}))
 
             log_result(sheets_service, SPREADSHEET_ID, rule_id, rule_desc, "SUCCESS", len(df), result_note)
             print(f"Rule {rule_id} completed successfully ({len(df)} rows).")
@@ -173,6 +195,9 @@ def main():
             error_str = str(e)
             print(f"Rule {rule_id} failed: {error_str}")
             log_result(sheets_service, SPREADSHEET_ID, rule_id, rule_desc, "FAILED", 0, error_str)
+
+        # Pace rules apart to stay under the Sheets 60-writes/min/user limit.
+        time.sleep(RULE_DELAY_SECONDS)
 
     if conn: conn.close()
 
