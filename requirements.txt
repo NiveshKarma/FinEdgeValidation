@@ -1,0 +1,6 @@
+# Dependencies for the GitHub Actions runner (run_validation.py)
+pandas==2.2.1
+psycopg2-binary==2.9.9
+google-api-python-client==2.121.0
+google-auth==2.29.0
+croniter==2.0.2

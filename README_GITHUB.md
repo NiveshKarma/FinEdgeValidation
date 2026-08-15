@@ -21,8 +21,10 @@ This project is now configured to run on **GitHub Actions**, which is 100% free 
 | `DB_USER` | Database Username |
 | `DB_PASSWORD` | Database Password |
 | `SPREADSHEET_ID` | The ID of your Google Sheet |
-| `DRIVE_FOLDER_ID` | The ID of the folder where JSONs should be saved |
 | `GCP_SERVICE_ACCOUNT_JSON` | **Copy-paste the entire content** of the JSON key file you downloaded in Step 1. |
+
+> Results are written into per-rule `Res <id>` tabs of the same Google Sheet, so no
+> Google Drive folder / `DRIVE_FOLDER_ID` is required.
 
 ## 3. Activate the Workflow
 1.  Push your code to the GitHub repository.
@@ -33,4 +35,4 @@ This project is now configured to run on **GitHub Actions**, which is 100% free 
 ## 4. How the Schedule Works
 *   The script is set to run **every hour** automatically (via `.github/workflows/data_validation.yml`).
 *   It will check the `cron_expression` and `is_active` columns in your Google Sheet.
-*   If a rule is due, it runs the SQL, saves to Drive, and logs the result back to the sheet.
+*   If a rule is due, it runs the SQL, writes the offending rows into that rule's `Res <id>` tab, and logs status + row count to `Results Log`.

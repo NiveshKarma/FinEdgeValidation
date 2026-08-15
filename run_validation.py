@@ -5,12 +5,12 @@ import pandas as pd
 import psycopg2
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
-from googleapiclient.http import MediaInMemoryUpload
 from croniter import croniter
 
 # --- Configuration ---
+# Results are written into the spreadsheet itself (per-rule "Res <id>" tabs), so no
+# Google Drive folder is needed -- a service account has no Drive storage quota anyway.
 SPREADSHEET_ID = os.environ.get('SPREADSHEET_ID')
-DRIVE_FOLDER_ID = os.environ.get('DRIVE_FOLDER_ID')
 GCP_SERVICE_ACCOUNT_JSON = os.environ.get('GCP_SERVICE_ACCOUNT_JSON')
 
 def get_google_service(service_name, version):
@@ -54,26 +54,6 @@ def is_safe_sql(sql_query):
     for keyword in forbidden:
         if f" {keyword} " in f" {query} ": return False
     return True
-
-def upload_to_drive(service, filename, df, folder_id):
-    """Uploads DataFrame as JSON to Drive, handling Timestamps."""
-    # Convert DataFrame to JSON string with ISO dates
-    json_data = df.to_json(orient='records', date_format='iso')
-    
-    file_metadata = {
-        'name': f"{filename}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-        'parents': [folder_id]
-    }
-    media = MediaInMemoryUpload(json_data.encode('utf-8'), mimetype='application/json')
-    
-    # We use supportsAllDrives=True in case it's a Shared Drive
-    file = service.files().create(
-        body=file_metadata, 
-        media_body=media, 
-        fields='id',
-        supportsAllDrives=True
-    ).execute()
-    return file.get('id')
 
 def log_result(sheets_service, spreadsheet_id, rule_id, rule_desc, status, row_count, error_msg=""):
     """Logs to 'Results Log' sheet."""

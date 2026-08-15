@@ -1,5 +1,13 @@
 # Setup Guide: GCP Data Validation System
 
+> ⚠️ **Deprecated route.** The pipeline now runs on **GitHub Actions** — see
+> `README_GITHUB.md`. The Google Cloud Function deployment (§3–4 below) has been retired
+> and `cloud_function/` was removed from the repo. The **Google Sheets setup (§1)** is
+> still required; the **Drive setup (§2) is no longer needed** — results are written into
+> per-rule tabs of the Sheet itself, not to Drive.
+> If a Cloud Function + Cloud Scheduler job are still deployed on GCP from before, delete
+> them so they stop running the old code.
+
 Follow these steps to deploy and configure the data validation system.
 
 ## 1. Google Sheets Setup
