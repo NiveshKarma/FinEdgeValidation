@@ -1,0 +1,20 @@
+# --- Secrets (NEVER commit) ---
+finedgevalidation-6c99fff3b27a.json
+*service-account*.json
+*service_account*.json
+*-key.json
+gcp-*.json
+.env
+.env.*
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,1104 @@
+id,rule_desc,template,cron_expression,last_run,is_active
+1.0,Shareholding data - Processed companies,"select time_map from generic_data
+
+SELECT 
+    key AS stock_symbol, 
+    (time_map->>key)::timestamp::date AS date_value, 
+    (time_map->>key)::timestamp::time AS time_value, 
+    cp.market_cap
+FROM generic_data gd,
+    LATERAL jsonb_each_text(gd.time_map) AS json_data(key, value)
+JOIN company_profiles cp 
+    ON json_data.key = cp.stock_symbol
+ORDER BY cp.market_cap DESC;",0 0 * * *,,TRUE
+2.0,Total Shareholding - stock specific,"SELECT 
+  stock_symbol, 
+  date_header,
+  ROUND(COALESCE((axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS promoter_shareholding_percentage,
+  ROUND(COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS public_shareholding_percentage,
+  ROUND(
+    (COALESCE((axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+     COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0)), 
+    2
+  ) AS total_shareholding_percentage,
+  ROUND((COALESCE((shareholding_pattern::json ->> 'NumberOfShares')::numeric, 0) / 10000000), 2) AS number_of_shares_in_crore,
+  COALESCE((shareholding_pattern::json ->> 'NumberOfShareholders')::numeric, 0) AS number_of_shareholders,
+  ROUND(COALESCE((axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Indian' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS indian,
+  ROUND(COALESCE((axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Foreign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS foreign,
+  ROUND(COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsDomestic' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS institutions_domestic,
+  ROUND(COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsForeign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS institutions_foreign,
+  ROUND(COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'Goverments' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS govt,
+  ROUND(COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'NonInstitutions' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS non_institutions,
+  ROUND(COALESCE((axis_summaries::json -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2) AS non_promoter_institutions,
+  ROUND(
+    (
+      COALESCE((axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Indian' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+      COALESCE((axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Foreign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+      COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsDomestic' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+      COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsForeign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+      COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'Goverments' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+      COALESCE((axis_summaries::json -> 'PublicShareholding' -> 'NonInstitutions' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+      COALESCE((axis_summaries::json -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0)
+    ), 
+    2
+  ) AS total_shareholding_breakdown
+FROM public.shareholder_summaries 
+WHERE stock_symbol = 'RELIANCE'  
+ORDER BY to_date DESC;",0 0 * * *,,TRUE
+3.0,"Shareholding Analysis
+XBRL","SELECT * FROM utils.company_exchange_xbrls WHERE stock_symbol = 'M&MFIN' ORDER BY to_date(""to_date"", 'DD-MON-YYYY') DESC;",0 0 * * *,,TRUE
+4.0,Shareholding Histories,"SELECT 
+    shoh.stock_symbol, 
+    shoh.shareholder_id, 
+    sh.name,
+    shoh.pct_of_ownership,
+	shoh.updated_at, 
+	shoh.date_header, 
+    shoh.number_of_shares, 
+    shoh.investment_value, 
+    shoh.pct_change, 
+    shoh.holdings
+FROM public.share_ownership_histories shoh
+JOIN public.shareholders sh 
+ON shoh.shareholder_id = sh.Id
+WHERE shoh.stock_symbol = 'BHAGCHEM' 
+AND shoh.date_header in ('Sep 2022') 
+--AND shoh.shareholder_id = '59755' 
+AND shoh.pct_of_ownership <> '0'
+ORDER BY shoh.pct_of_ownership DESC;",0 0 * * *,,TRUE
+5.0,Current ownership,"select stock_symbol, shareholder_id,
+to_date, date_header, pct_of_ownership, holdings 
+from share_ownerships where 
+stock_symbol = 'RELIANCE'
+AND pct_of_ownership <> '0'
+order by pct_of_ownership desc",0 0 * * *,,TRUE
+6.0,Superinvestor Analysis,"SELECT * FROM public.shareholders where parent_investor = '59755'
+SELECT * FROM public.shareholders WHERE name ILIKE '%jhun%' and parent_investor not in ('59755');
+SELECT * FROM public.share_ownership_histories where shareholder_id = '60543' 
+SELECT * FROM public.shareholders where super_investor_ind = 'true'
+
+SELECT id, name, super_investor_ind, parent_investor, exclusion_overrides, shareholding_axis
+FROM public.shareholders where parent_investor = '59755'
+
+SELECT * FROM public.shareholders 
+WHERE (name ILIKE '%gov%' and name ILIKE '%sing%') and parent_investor is null",0 0 * * *,,TRUE
+7.0,"Superinvestor Data 
+Current view","SELECT 
+    so.stock_symbol, 
+    so.shareholder_id, 
+    so.date_header, 
+    so.number_of_shares, 
+    so.investment_value, 
+    so.pct_of_ownership, 
+    so.pct_change, 
+    so.holdings 
+FROM public.share_ownerships so
+WHERE so.shareholder_id = '59752' 
+	AND pct_of_ownership <> '0'
+ORDER BY so.pct_of_ownership desc",0 0 * * *,,TRUE
+8.0,Superinvestor % change,"SELECT 
+    shoh.stock_symbol, 
+    shoh.shareholder_id, 
+    sh.name,
+    shoh.pct_of_ownership, 
+    shoh.date_header, 
+    shoh.number_of_shares, 
+    shoh.investment_value, 
+    shoh.pct_change, 
+    shoh.holdings
+FROM public.share_ownership_histories shoh
+JOIN public.shareholders sh 
+ON shoh.shareholder_id = sh.Id
+WHERE shoh.stock_symbol = 'CRISIL' 
+AND shoh.date_header in ('Sep 2024','Dec 2024','Jun 2024') 
+AND shoh.pct_of_ownership <> '0'
+AND shareholder_id = '59755'
+ORDER BY shoh.pct_of_ownership DESC;",0 0 * * *,,TRUE
+9.0,Shares change in % by quarter,"SELECT
+  to_date,
+  stock_symbol,
+  ROUND(
+    100.0 * (
+      (
+        (shareholding_pattern->>'NumberOfShares')::BIGINT - 
+        LAG((shareholding_pattern->>'NumberOfShares')::BIGINT) OVER (PARTITION BY stock_symbol ORDER BY to_date DESC)
+      )::NUMERIC
+      /
+      NULLIF(LAG((shareholding_pattern->>'NumberOfShares')::BIGINT) OVER (PARTITION BY stock_symbol ORDER BY to_date DESC), 0)
+    ), 2
+  ) AS PercentageIncreaseInNumberOfShares,
+  ROUND((shareholding_pattern->>'NumberOfShares')::NUMERIC / 10000000, 2) AS NumberOfSharesInCrore,
+  (shareholding_pattern->>'NumberOfShareholders')::BIGINT AS NumberOfShareholders,
+  (shareholding_pattern->>'NumberOfVotingRights')::BIGINT AS NumberOfVotingRights,
+  shareholding_pattern->>'NumberOfSharesOriginal' AS NumberOfSharesOriginal,
+  (shareholding_pattern->>'PercentageOfTotalVotingRights')::NUMERIC AS PercentageOfTotalVotingRights,
+  (shareholding_pattern->>'NumberOfFullyPaidUpEquityShares')::BIGINT AS NumberOfFullyPaidUpEquityShares,
+  (shareholding_pattern->>'NumberOfEquitySharesHeldInDematerializedForm')::BIGINT AS NumberOfEquitySharesHeldInDematerializedForm,
+  (shareholding_pattern->>'NumberOfVotingRightsHeldBySameClassOfSecurities')::BIGINT AS NumberOfVotingRightsHeldBySameClassOfSecurities,
+  (shareholding_pattern->>'NumberOfSharesUnderlyingOutstandingDepositoryReceipts')::BIGINT AS NumberOfSharesUnderlyingOutstandingDepositoryReceipts
+FROM
+  shareholder_summaries
+WHERE
+  stock_symbol = 'RELIANCE'
+ORDER BY
+  to_date DESC;",0 0 * * *,,TRUE
+10.0,,"SELECT * FROM utils.company_exchange_xbrls where stock_symbol = 'TORNTPOWER' and period = 'Annual'
+(bse_sh_broadcast_dt >= '2025-05-15' OR bse_fi_broadcast_dt >= '2025-05-15' OR nse_sh_broadcast_date >= '2025-05-15' or nse_broadcast_date >= '2025-05-15')
+ORDER BY bse_sh_broadcast_dt desc LIMIT 100
+
+SELECT * FROM utils.split_bonus_utils where stock_symbol = 'BEARDSELL' --comments = 'R3'
+--UPDATE utils.split_bonus_utils SET comments = NULL WHERE --comments = 'R3'; No impact row
+--SELECT * FROM utils.company_exchange_xbrls where stock_symbol = 'BEARDSELL' ORDER BY id DESC and period = 'Annual'
+--SELECT * FROM utils.split_bonus_utils where corp_action = 'NK' and stock_symbol is null  ilike '%xbrl%'
+--R4 - Run for XBRL
+
+--SELECT * FROM utils.split_bonus_utils where denominator = '0'",0 0 * * *,,TRUE
+11.0,,"select * from shareholder_summaries where stock_symbol = 'ITC' order by timestamp desc
+
+--SELECT stock_symbol, period, from_date, to_date, bse_shareholding_xbrl_url, nse_shareholding_xbrl_url 
+--FROM utils.company_exchange_xbrls where stock_symbol = '543928' 
+
+Select * from utils.split_bonus_utils where stock_symbol = 'ITC' ",0 0 * * *,,TRUE
+12.0,Update sign of NI,"UPDATE profit_losses pl
+SET consolidated_overrides = jsonb_build_object(
+    'ProfitOrLossAttributableToNonControllingInterests',
+    -1 * (pl.consolidated_json ->> 'ProfitOrLossAttributableToNonControllingInterests')::BIGINT
+)
+WHERE (stock_symbol, to_date, period, date_header) IN (    ('TRENT', '2023-03-31 23:59:59', 'Annual', 'Mar 2023'),
+    ('DLF', '2018-12-31 23:59:59', 'Quarterly', 'Dec 2018'),
+    ('DLF', '2018-03-31 23:59:59', 'Quarterly', 'Mar 2018'),
+    ('DLF', '2017-03-31 23:59:59', 'Quarterly', 'Mar 2017'),
+    ('HINDALCO', '2019-03-31 23:59:59', 'Annual', 'Mar 2019'),
+    ('CGPOWER', '2025-06-30 23:59:59', 'Quarterly', 'Jun 2025'),
+    ('CGPOWER', '2024-03-31 23:59:59', 'Annual', 'Mar 2024'),
+    ('CGPOWER', '2025-03-31 23:59:59', 'Annual', 'Mar 2025'),
+    ('APOLLOHOSP', '2019-12-31 23:59:59', 'Quarterly', 'Dec 2019'),
+    ('LUPIN', '2022-06-30 23:59:59', 'Quarterly', 'Jun 2022'),
+    ('ABCAPITAL', '2019-06-30 23:59:59', 'Quarterly', 'Jun 2019'),
+    ('BIOCON', '2019-09-30 23:59:59', 'Quarterly', 'Sep 2019'),
+    ('BIOCON', '2019-03-31 23:59:59', 'Quarterly', 'Mar 2019'),
+    ('BIOCON', '2019-03-31 23:59:59', 'Annual', 'Mar 2019'),
+    ('BIOCON', '2019-12-31 23:59:59', 'Quarterly', 'Dec 2019'),
+    ('PEL', '2019-03-31 23:59:59', 'Annual', 'Mar 2019'),
+    ('ASAHIINDIA', '2018-03-31 23:59:59', 'Annual', 'Mar 2018'),
+    ('ASAHIINDIA', '2023-06-30 23:59:59', 'Quarterly', 'Jun 2023'),
+    ('KAJARIACER', '2018-03-31 23:59:59', 'Annual', 'Mar 2018'),
+    ('JINDALSAW', '2023-06-30 23:59:59', 'Quarterly', 'Jun 2023'),
+    ('ZEEL', '2018-03-31 23:59:59', 'Annual', 'Mar 2018'),
+    ('PVRINOX', '2025-03-31 23:59:59', 'Annual', 'TTM'),
+    ('PVRINOX', '2025-03-31 23:59:59', 'Annual', 'Mar 2025'),
+    ('SONATSOFTW', '2018-03-31 23:59:59', 'Quarterly', 'Mar 2018'),
+    ('SHILPAMED', '2022-06-30 23:59:59', 'Quarterly', 'Jun 2022'),
+    ('JKPAPER', '2019-03-31 23:59:59', 'Annual', 'Mar 2019'),
+    ('ASHOKA', '2023-03-31 23:59:59', 'Quarterly', 'Mar 2023'),
+    ('CAMLINFINE', '2019-03-31 23:59:59', 'Quarterly', 'Mar 2019'),
+    ('543971', '2025-03-31 23:59:59', 'Annual', 'Mar 2025'),
+    ('543971', '2025-03-31 23:59:59', 'Annual', 'TTM'),
+    ('LUXIND', '2023-03-31 23:59:59', 'Annual', 'Mar 2023'),
+    ('GLOBUSSPR', '2019-03-31 23:59:59', 'Annual', 'Mar 2019'),
+    ('543928', '2025-03-31 23:59:59', 'Annual', 'Mar 2025'),
+    ('543928', '2025-03-31 23:59:59', 'Annual', 'TTM'),
+    ('543931', '2025-03-31 23:59:59', 'Annual', 'Mar 2025'),
+    ('543931', '2025-03-31 23:59:59', 'Annual', 'TTM'),
+    ('543895', '2025-03-31 23:59:59', 'Annual', 'TTM'),
+    ('543895', '2025-03-31 23:59:59', 'Annual', 'Mar 2025'),
+    ('523710', '2020-03-31 23:59:59', 'Annual', 'Mar 2020'),
+    ('509162', '2024-03-31 23:59:59', 'Annual', 'Mar 2024'),
+    ('543616', '2025-03-31 23:59:59', 'Annual', 'Mar 2025'),
+    ('539984', '2023-12-31 23:59:59', 'Quarterly', 'Dec 2023'),
+    ('539984', '2022-09-30 23:59:59', 'Quarterly', 'Sep 2022'),
+    ('JHS', '2023-03-31 23:59:59', 'Annual', 'Mar 2023'),
+    ('506919', '2022-09-30 23:59:59', 'Quarterly', 'Sep 2022'),
+    ('511411', '2020-03-31 23:59:59', 'Annual', 'Mar 2020'),
+    ('MADHUCON', '2021-12-31 23:59:59', 'Quarterly', 'Dec 2021'),
+    ('501700', '2020-03-31 23:59:59', 'Annual', 'Mar 2020'),
+    ('511601', '2023-03-31 23:59:59', 'Annual', 'Mar 2023'),
+    ('540729', '2025-03-31 23:59:59', 'Annual', 'Mar 2025')
+);",0 0 * * *,,TRUE
+,Update SQL,"UPDATE utils.company_exchange_xbrls
+SET
+    pending_import = TRUE,
+    pending_export = TRUE
+WHERE stock_symbol = 'SASTASUNDR'
+  AND bse_standalone_xbrl_url <> ''
+  AND xbrl_id IN (
+      282311,
+      70900,
+      70905,
+      70910,
+      70915,
+      70920,
+      70925,
+      70930,
+      70935,
+      70940,
+      70945,
+      70950,
+      70955,
+      70960,
+      70965
+  );",0 0 * * *,,TRUE
+1.0,High hare % incresse across rows,"WITH generic_symbols AS (
+  SELECT json_data.key AS stock_symbol
+  FROM generic_data gd
+  JOIN LATERAL jsonb_each_text(gd.time_map) AS json_data(key, value) ON true
+),
+filtered_data AS (
+  SELECT ss.*
+  FROM shareholder_summaries ss
+  INNER JOIN generic_symbols gs ON ss.stock_symbol = gs.stock_symbol
+),
+ordered_data AS (
+  SELECT
+    fd.stock_symbol,
+    fd.to_date,
+    (fd.shareholding_pattern ->> 'NumberOfShares')::BIGINT AS number_of_shares,
+    fd.shareholding_pattern ->> 'NumberOfSharesOriginal' AS number_of_shares_original,
+    LAG((fd.shareholding_pattern ->> 'NumberOfShares')::BIGINT) OVER (
+      PARTITION BY fd.stock_symbol
+      ORDER BY fd.to_date DESC
+    ) AS prev_number_of_shares
+  FROM filtered_data fd
+),
+with_percent_increase AS (
+  SELECT
+    stock_symbol,
+    to_date,
+    number_of_shares,
+    number_of_shares_original,
+    prev_number_of_shares,
+    ROUND((number_of_shares - prev_number_of_shares) * 100.0 / prev_number_of_shares, 2) AS shares_percent_increase
+  FROM ordered_data
+  WHERE prev_number_of_shares IS NOT NULL
+    AND prev_number_of_shares > 0
+)
+SELECT
+  wpi.stock_symbol,
+  cp.company_type, 
+  wpi.to_date,
+  wpi.number_of_shares,
+  wpi.number_of_shares_original,
+  wpi.prev_number_of_shares,
+  wpi.shares_percent_increase,
+  sbu.corp_action,
+  sbu.numerator,
+  sbu.denominator,
+  sbu.ex_date,
+  sbu.ex_date_override,
+  sbu.comments,
+  cp.market_cap,
+
+  CASE
+    WHEN sbu.corp_action IN ('Bonus', 'Rights') AND sbu.denominator != 0 THEN
+      ROUND(1 + sbu.numerator::NUMERIC / sbu.denominator, 4)
+    WHEN sbu.corp_action = 'Split' AND sbu.denominator != 0 THEN
+      ROUND(sbu.numerator::NUMERIC / sbu.denominator, 4)
+    ELSE NULL
+  END AS multiplier,
+
+  ROUND(wpi.number_of_shares::NUMERIC / NULLIF(wpi.prev_number_of_shares, 0), 4) AS share_ratio,
+  ROUND(wpi.prev_number_of_shares::NUMERIC / NULLIF(wpi.number_of_shares, 0), 4) AS rev_share_ratio,
+
+  CASE
+    WHEN ROUND(wpi.number_of_shares::NUMERIC / NULLIF(wpi.prev_number_of_shares, 0), 4) =
+         CASE
+           WHEN sbu.corp_action IN ('Bonus', 'Rights') AND sbu.denominator != 0 THEN
+             ROUND(1 + sbu.numerator::NUMERIC / sbu.denominator, 4)
+           WHEN sbu.corp_action = 'Split' AND sbu.denominator != 0 THEN
+             ROUND(sbu.numerator::NUMERIC / sbu.denominator, 4)
+           ELSE NULL
+         END THEN 'TRUE'
+    ELSE ''
+  END AS check_1,
+
+  CASE
+    WHEN ROUND(wpi.prev_number_of_shares::NUMERIC / NULLIF(wpi.number_of_shares, 0), 4) =
+         CASE
+           WHEN sbu.corp_action IN ('Bonus', 'Rights') AND sbu.denominator != 0 THEN
+             ROUND(1 + sbu.numerator::NUMERIC / sbu.denominator, 4)
+           WHEN sbu.corp_action = 'Split' AND sbu.denominator != 0 THEN
+             ROUND(sbu.numerator::NUMERIC / sbu.denominator, 4)
+           ELSE NULL
+         END THEN 'TRUE'
+    ELSE ''
+  END AS check_2,
+
+  DATE_PART('year', wpi.to_date) * 12 + DATE_PART('month', wpi.to_date) -
+  (DATE_PART('year', sbu.ex_date) * 12 + DATE_PART('month', sbu.ex_date)) AS month_diff,
+
+  CASE
+    WHEN wpi.shares_percent_increase > 0 THEN 'Increase'
+    WHEN wpi.shares_percent_increase < 0 THEN 'Decrease'
+    ELSE 'No Change'
+  END AS change_direction
+
+FROM with_percent_increase wpi
+LEFT JOIN utils.split_bonus_utils sbu ON wpi.stock_symbol = sbu.stock_symbol
+LEFT JOIN company_profiles cp ON wpi.stock_symbol = cp.stock_symbol
+WHERE ABS(wpi.shares_percent_increase) > 25
+  AND cp.company_name NOT ILIKE '%Mutual Fund%'   -- ✅ Added condition
+  AND cp.company_type in ('equity','SME')
+  AND (sbu.comments = '' or sbu.comments is null or sbu.comments = 'Automated override')
+ORDER BY wpi.shares_percent_increase DESC;",0 0 * * *,,TRUE
+2.0,Duplicate in corporate action,"SELECT 
+    stock_symbol,
+    corp_action,
+    numerator,
+    denominator,
+    ex_date
+FROM 
+    utils.split_bonus_utils
+GROUP BY 
+    stock_symbol,
+    corp_action,
+    numerator,
+    denominator,
+    ex_date
+HAVING 
+    COUNT(*) >= 2;",0 0 * * *,,TRUE
+3.0,numerator = '0' or denominator = '0',Select * from utils.split_bonus_utils where ( numerator = '0' or denominator = '0'),0 0 * * *,,TRUE
+4.0,Duplicate in corporate action - v2,"SELECT t.*,
+       cp.company_type,
+       cp.market_cap
+FROM (
+    SELECT *,
+           COUNT(*) OVER (
+               PARTITION BY stock_symbol, numerator, denominator, ex_date
+           ) AS dup_cnt
+    FROM utils.split_bonus_utils
+) t
+INNER JOIN company_profiles cp
+    ON t.stock_symbol = cp.stock_symbol
+WHERE t.dup_cnt > 1 and cp.company_type = 'SME'
+ORDER BY t.stock_symbol, t.ex_date, t.numerator, t.denominator, t.id;",0 0 * * *,,TRUE
+5.0,Dividend check,Select * from utils.dividend_utils where stock_symbol = '543782',0 0 * * *,,TRUE
+6.0,All shareholding SUM <> 100%,"SELECT 
+    ss.stock_symbol,
+    cp.market_cap,
+    jsonb_agg(
+        jsonb_build_object(
+            'date_header', ss.date_header,
+            'promoter_shareholding_percentage', ROUND(COALESCE((ss.axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'public_shareholding_percentage', ROUND(COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'total_shareholding_percentage', ROUND(
+                (
+                    COALESCE((ss.axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+                    COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0)
+                ),
+                2
+            ),
+            'number_of_shares_in_crore', ROUND((COALESCE((ss.shareholding_pattern::json ->> 'NumberOfShares')::numeric, 0) / 10000000), 2),
+            'number_of_shareholders', COALESCE((ss.shareholding_pattern::json ->> 'NumberOfShareholders')::numeric, 0),
+            'indian', ROUND(COALESCE((ss.axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Indian' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'foreign', ROUND(COALESCE((ss.axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Foreign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'institutions_domestic', ROUND(COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsDomestic' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'institutions_foreign', ROUND(COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsForeign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'govt', ROUND(COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'Goverments' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'non_institutions', ROUND(COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'NonInstitutions' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'non_promoter_institutions', ROUND(COALESCE((ss.axis_summaries::json -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0), 2),
+            'total_shareholding_breakdown', ROUND(
+                (
+                    COALESCE((ss.axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Indian' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+                    COALESCE((ss.axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Foreign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+                    COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsDomestic' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+                    COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsForeign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+                    COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'Goverments' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+                    COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'NonInstitutions' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+                    COALESCE((ss.axis_summaries::json -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0)
+                ),
+                2
+            )
+        )
+        ORDER BY ss.date_header DESC
+    ) AS shareholding_history
+FROM public.shareholder_summaries ss
+JOIN public.company_profiles cp
+    ON cp.stock_symbol = ss.stock_symbol
+WHERE 
+    ROUND(
+        (
+            COALESCE((ss.axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Indian' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+            COALESCE((ss.axis_summaries::json -> 'ShareholdingOfPromoterAndPromoterGroup' -> 'Foreign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+            COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsDomestic' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+            COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'InstitutionsForeign' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+            COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'Goverments' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+            COALESCE((ss.axis_summaries::json -> 'PublicShareholding' -> 'NonInstitutions' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0) +
+            COALESCE((ss.axis_summaries::json -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'SharesHeldByNonPromoterNonPublicShareholders' -> 'aggregates' ->> 'ShareholdingAsAPercentageOfTotalNumberOfShares')::numeric, 0)
+        ),
+        2
+    ) NOT BETWEEN 99 AND 101
+GROUP BY 
+    ss.stock_symbol,
+    cp.market_cap order by cp.market_cap desc",0 0 * * *,,TRUE
+7.0,"Stock symbols that are in share_ownerships but not in share_ownership_histories, and vice versa.","SELECT DISTINCT
+    soh.stock_symbol,
+	soh.date_header,
+    'Missing in share_ownerships' AS missing_from,
+    cp.market_cap
+FROM share_ownership_histories soh
+LEFT JOIN company_profiles cp
+    ON cp.stock_symbol = soh.stock_symbol
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM share_ownerships so
+    WHERE so.stock_symbol = soh.stock_symbol
+)
+
+UNION
+
+SELECT DISTINCT
+    so.stock_symbol,
+	so.date_header, 
+    'Missing in share_ownership_histories' AS missing_from,
+    cp.market_cap
+FROM share_ownerships so
+LEFT JOIN company_profiles cp
+    ON cp.stock_symbol = so.stock_symbol
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM share_ownership_histories soh
+    WHERE soh.stock_symbol = so.stock_symbol
+)
+
+ORDER BY missing_from, stock_symbol;",0 0 * * *,,TRUE
+8.0,Company present in Company_profiles but missing in share_ownership_histories or share_ownerships. ,"SELECT
+    cp.stock_symbol,
+    cp.market_cap,
+    CASE
+        WHEN NOT EXISTS (
+            SELECT 1
+            FROM share_ownerships so
+            WHERE so.stock_symbol = cp.stock_symbol
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM share_ownership_histories soh
+            WHERE soh.stock_symbol = cp.stock_symbol
+        )
+            THEN 'Missing in both'
+
+        WHEN NOT EXISTS (
+            SELECT 1
+            FROM share_ownerships so
+            WHERE so.stock_symbol = cp.stock_symbol
+        )
+            THEN 'Missing in share_ownerships'
+
+        WHEN NOT EXISTS (
+            SELECT 1
+            FROM share_ownership_histories soh
+            WHERE soh.stock_symbol = cp.stock_symbol
+        )
+            THEN 'Missing in share_ownership_histories'
+    END AS missing_status
+FROM company_profiles cp
+WHERE
+    cp.active = true
+    AND (
+        NOT EXISTS (
+            SELECT 1 FROM share_ownerships so
+            WHERE so.stock_symbol = cp.stock_symbol
+        )
+        OR NOT EXISTS (
+            SELECT 1 FROM share_ownership_histories soh
+            WHERE soh.stock_symbol = cp.stock_symbol
+        )
+    )
+ORDER BY
+    cp.market_cap DESC;",0 0 * * *,,TRUE
+9.0,"This SQL identifies records in shareholder_summaries where key data fields in shareholding_pattern, axis_summaries, declaration, or summaries are missing or empty.","SELECT 
+    stock_symbol, 
+    date_header, 
+    shareholding_pattern,
+    axis_summaries,
+    declaration,
+    summaries,
+    -- Identify the first missing key field from shareholding_pattern
+    CASE 
+        WHEN shareholding_pattern->>'NumberOfShares' IS NULL OR shareholding_pattern->>'NumberOfShares' = '' THEN 'NumberOfShares' 
+        WHEN shareholding_pattern->>'NumberOfShareholders' IS NULL OR shareholding_pattern->>'NumberOfShareholders' = '' THEN 'NumberOfShareholders' 
+        ELSE NULL 
+    END AS missing_field
+FROM shareholder_summaries
+WHERE 
+    -- Conditions to detect missing values in shareholding_pattern
+    shareholding_pattern->>'NumberOfShares' IS NULL OR shareholding_pattern->>'NumberOfShares' = ''
+    OR shareholding_pattern->>'NumberOfShareholders' IS NULL OR shareholding_pattern->>'NumberOfShareholders' = ''
+    -- Conditions to check if axis_summaries, declaration, or summaries are null or empty
+    OR axis_summaries IS NULL OR axis_summaries::text = '{}' OR axis_summaries::text = ''
+    OR declaration IS NULL OR declaration::text = '{}' OR declaration::text = ''
+    --OR summaries IS NULL OR summaries::text = '{}' --commented as this column as added later
+	--OR summaries::text = '' --commented as this column as added later",0 0 * * *,,TRUE
+10.0,Duplciate Records - share_ownerships,"SELECT *
+FROM share_ownerships s
+WHERE (s.stock_symbol, s.shareholder_id, s.date_header) IN (
+    SELECT stock_symbol, shareholder_id, date_header
+    FROM share_ownerships
+    GROUP BY stock_symbol, shareholder_id, date_header
+    HAVING COUNT(*) > 1
+)",0 0 * * *,,TRUE
+11.0,Duplicate Records - share_ownership_histories,"SELECT *
+FROM share_ownership_histories s
+WHERE (s.stock_symbol, s.shareholder_id, s.date_header) IN (
+    SELECT stock_symbol, shareholder_id, date_header
+    FROM share_ownership_histories
+    GROUP BY stock_symbol, shareholder_id, date_header
+    HAVING COUNT(*) > 1
+)",0 0 * * *,,TRUE
+12.0,Duplciate Records - share_summaries,"SELECT *
+FROM shareholder_summaries
+WHERE (stock_symbol, date_header) IN (
+    SELECT stock_symbol, date_header
+    FROM shareholder_summaries
+    GROUP BY stock_symbol, date_header
+    HAVING COUNT(*) > 1
+)
+ORDER BY stock_symbol, date_header;",0 0 * * *,,TRUE
+13.0,"Analysis SQL
+
+NumberOfShares <> NumberOfSharesOriginal","WITH latest_split_bonus AS (
+    SELECT DISTINCT ON (stock_symbol)
+        stock_symbol,
+        COALESCE(ex_date_override, ex_date) AS effective_ex_date,
+        comments
+    FROM utils.split_bonus_utils
+    WHERE COALESCE(ex_date_override, ex_date) IS NOT NULL --and comments = ''
+    ORDER BY
+        stock_symbol,
+        COALESCE(ex_date_override, ex_date) DESC
+)
+SELECT
+    lsb.stock_symbol,
+    cp.market_cap,
+    lsb.effective_ex_date AS ex_date,
+    ss.timestamp,
+    ss.to_date,
+	lsb.comments, 
+    ss.shareholding_pattern
+FROM latest_split_bonus lsb
+JOIN shareholder_summaries ss
+    ON lsb.stock_symbol = ss.stock_symbol
+JOIN company_profiles cp
+    ON lsb.stock_symbol = cp.stock_symbol
+WHERE
+    lsb.effective_ex_date >= ss.to_date
+    AND (
+        (ss.shareholding_pattern::json ->> 'NumberOfShares')::BIGINT =
+        (ss.shareholding_pattern::json ->> 'NumberOfSharesOriginal')::BIGINT
+    )
+ORDER BY
+    cp.market_cap DESC;",0 0 * * *,,TRUE
+14.0,Missing rows,"WITH bounds AS (
+    SELECT
+        stock_symbol,
+        MIN(timestamp) AS min_ts,
+        MAX(timestamp) AS max_ts
+    FROM shareholder_summaries
+    GROUP BY stock_symbol
+),
+start_end AS (
+    SELECT
+        stock_symbol,
+        GREATEST(MIN(timestamp), 202201231) AS start_ts,
+        MAX(timestamp) AS end_ts
+    FROM shareholder_summaries
+    GROUP BY stock_symbol
+),
+years AS (
+    SELECT 
+        stock_symbol,
+        SUBSTRING(start_ts::TEXT, 1, 4)::INT AS start_year,
+        SUBSTRING(end_ts::TEXT, 1, 4)::INT AS end_year,
+        start_ts,
+        end_ts
+    FROM start_end
+),
+expected AS (
+    SELECT
+        y.stock_symbol,
+        (yr || q.suffix)::BIGINT AS expected_ts
+    FROM years y
+    CROSS JOIN LATERAL generate_series(y.start_year, y.end_year) yr
+    CROSS JOIN (
+        VALUES ('00331'), ('00630'), ('00930'), ('01231')
+    ) AS q(suffix)
+    WHERE (yr || q.suffix)::BIGINT >= y.start_ts
+      AND (yr || q.suffix)::BIGINT <= y.end_ts
+),
+missing AS (
+    SELECT e.stock_symbol, e.expected_ts
+    FROM expected e
+    LEFT JOIN shareholder_summaries s
+        ON s.stock_symbol = e.stock_symbol
+       AND s.timestamp = e.expected_ts
+    WHERE s.timestamp IS NULL
+)
+SELECT 
+    m.stock_symbol,
+    CASE RIGHT(m.expected_ts::TEXT, 4)
+        WHEN '0331' THEN 'Mar ' || LEFT(m.expected_ts::TEXT, 4)
+        WHEN '0630' THEN 'Jun ' || LEFT(m.expected_ts::TEXT, 4)
+        WHEN '0930' THEN 'Sep ' || LEFT(m.expected_ts::TEXT, 4)
+        WHEN '1231' THEN 'Dec ' || LEFT(m.expected_ts::TEXT, 4)
+    END AS formatted_period,
+    cp.market_cap,
+    cp.active,
+    cp.ready_for_api, cp.company_name, cp.sub_industry
+FROM missing m
+LEFT JOIN company_profiles cp
+    ON cp.stock_symbol = m.stock_symbol
+WHERE cp.company_name NOT ILIKE '%ETF%'
+  AND cp.company_name NOT ILIKE '%Mutual Fund%'
+ORDER BY cp.market_cap DESC;",0 0 * * *,,TRUE
+15.0,"High % increase in shares across the year. 
+This is for each year. ","WITH MarData AS (
+    SELECT 
+        stock_symbol, 
+        date_header, 
+        (shareholding_pattern ->> 'NumberOfShares')::NUMERIC / 10000000 AS shares_in_crore
+    FROM 
+        shareholder_summaries
+    WHERE 
+        date_header LIKE 'Mar %'
+),
+RankedMarData AS (
+    SELECT 
+        stock_symbol, 
+        date_header, 
+        shares_in_crore,
+        LAG(shares_in_crore) OVER (PARTITION BY stock_symbol ORDER BY date_header ASC) AS prev_shares,
+        LAG(date_header) OVER (PARTITION BY stock_symbol ORDER BY date_header ASC) AS prev_date_header
+    FROM 
+        MarData
+),
+FilteredData AS (
+    SELECT 
+        stock_symbol, 
+        jsonb_build_object(
+            'current_date_header', date_header,
+            'prev_date_header', prev_date_header,
+            'current_shares_crore', ROUND(shares_in_crore, 2),
+            'previous_shares_crore', ROUND(prev_shares, 2),
+            'percent_increase', ROUND(((shares_in_crore - prev_shares) / prev_shares) * 100, 2)
+        ) AS quarter_data
+    FROM 
+        RankedMarData
+    WHERE 
+        prev_shares IS NOT NULL
+        AND ((shares_in_crore - prev_shares) / prev_shares) * 100 > 5
+),
+AggregatedData AS (
+    SELECT 
+        stock_symbol, 
+        jsonb_agg(quarter_data) AS yearly_details
+    FROM 
+        FilteredData
+    GROUP BY 
+        stock_symbol
+),
+ExtractedSymbols AS (
+    SELECT 
+        jsonb_object_keys(time_map) AS stock_symbol, 
+        (time_map ->> jsonb_object_keys(time_map))::TEXT AS timestamp
+    FROM 
+        generic_data
+)
+SELECT 
+    a.stock_symbol, 
+    a.yearly_details, 
+    e.timestamp AS stock_timestamp
+FROM 
+    AggregatedData a
+JOIN 
+    ExtractedSymbols e ON a.stock_symbol = e.stock_symbol;",0 0 * * *,,TRUE
+16.0,"Analysis SQL
+
+EPS Calculated using Profit / NumberOfShares","SELECT
+    pl.stock_symbol,
+    pl.date_header,
+    pl.period,
+    
+    -- Converted to crore
+    ROUND(CAST(pl.standalone_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 10000000, 2) AS standalone_PL_crore,
+    ROUND(CAST(pl.consolidated_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 10000000, 2) AS consolidated_PL_crore,
+    
+    -- Round CalculatedEPS to 2 decimals
+    ROUND(CAST(pl.standalone_json->>'CalculatedEPS' AS NUMERIC), 2) AS standalone_CalculatedEPS,
+    ROUND(CAST(pl.standalone_json->>'AdjustedEPS' AS NUMERIC), 2) AS standalone_AdjustedEPS,
+    ROUND(CAST(pl.standalone_json->>'AdjustedDilutedEPS' AS NUMERIC), 2) AS standalone_AdjustedDilutedEPS,
+    ROUND(CAST(pl.consolidated_json->>'CalculatedEPS' AS NUMERIC), 2) AS consolidated_CalculatedEPS,
+    ROUND(CAST(pl.consolidated_json->>'AdjustedEPS' AS NUMERIC), 2) AS consolidated_AdjustedEPS,
+    ROUND(CAST(pl.consolidated_json->>'AdjustedDilutedEPS' AS NUMERIC), 2) AS consolidated_AdjustedDilutedEPS,
+    
+    -- EPS Calculated using Profit / NumberOfShares
+    ROUND(
+        CAST(pl.standalone_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+        NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 
+    2) AS standalone_EPS_Computed,
+    
+    ROUND(
+        CAST(pl.consolidated_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+        NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 
+    2) AS consolidated_EPS_Computed,
+
+    CASE 
+        WHEN sbu.stock_symbol IS NOT NULL THEN 'Yes'
+        ELSE 'No'
+    END AS corporate_action
+
+FROM
+    profit_losses pl
+LEFT JOIN (
+    SELECT DISTINCT stock_symbol FROM utils.split_bonus_utils
+) sbu ON pl.stock_symbol = sbu.stock_symbol
+
+LEFT JOIN shareholder_summaries ss
+    ON pl.stock_symbol = ss.stock_symbol
+    AND pl.period = ss.date_header
+
+WHERE
+    (pl.standalone_json->>'CalculatedEPS') IS NOT NULL
+    OR (pl.consolidated_json->>'CalculatedEPS') IS NOT NULL
+
+ORDER BY
+    pl.timestamp DESC;",0 0 * * *,,TRUE
+17.0,"Analysis SQL
+
+EPS Calculated using Profit / NumberOfShares","SELECT
+    pl.stock_symbol,
+    pl.date_header,
+    pl.period,
+
+    -- Converted to crore
+    ROUND(CAST(pl.standalone_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 10000000, 2) AS standalone_PL_crore,
+    ROUND(CAST(pl.consolidated_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 10000000, 2) AS consolidated_PL_crore,
+
+    -- Round CalculatedEPS to 2 decimals
+    ROUND(CAST(pl.standalone_json->>'CalculatedEPS' AS NUMERIC), 2) AS standalone_CalculatedEPS,
+    ROUND(CAST(pl.standalone_json->>'AdjustedEPS' AS NUMERIC), 2) AS standalone_AdjustedEPS,
+    ROUND(CAST(pl.standalone_json->>'AdjustedDilutedEPS' AS NUMERIC), 2) AS standalone_AdjustedDilutedEPS,
+    ROUND(CAST(pl.consolidated_json->>'CalculatedEPS' AS NUMERIC), 2) AS consolidated_CalculatedEPS,
+    ROUND(CAST(pl.consolidated_json->>'AdjustedEPS' AS NUMERIC), 2) AS consolidated_AdjustedEPS,
+    ROUND(CAST(pl.consolidated_json->>'AdjustedDilutedEPS' AS NUMERIC), 2) AS consolidated_AdjustedDilutedEPS,
+
+    -- EPS Computed using Profit / NumberOfShares
+    ROUND(
+        CAST(pl.standalone_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+        NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 
+    2) AS standalone_EPS_Computed,
+
+    ROUND(
+        CAST(pl.consolidated_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+        NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 
+    2) AS consolidated_EPS_Computed,
+
+    -- NumberOfShares used in EPS Computation
+    NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0) AS number_of_shares_used,
+
+    -- % Difference: standalone_CalculatedEPS vs standalone_AdjustedDilutedEPS
+    CASE 
+        WHEN CAST(pl.standalone_json->>'AdjustedDilutedEPS' AS NUMERIC) != 0 THEN
+            ROUND((
+                (CAST(pl.standalone_json->>'CalculatedEPS' AS NUMERIC) - CAST(pl.standalone_json->>'AdjustedDilutedEPS' AS NUMERIC)) /
+                CAST(pl.standalone_json->>'AdjustedDilutedEPS' AS NUMERIC)
+            ) * 100, 2)
+        ELSE NULL
+    END AS standalone_EPS_pct_diff,
+
+    -- % Difference: consolidated_CalculatedEPS vs consolidated_AdjustedDilutedEPS
+    CASE 
+        WHEN CAST(pl.consolidated_json->>'AdjustedDilutedEPS' AS NUMERIC) != 0 THEN
+            ROUND((
+                (CAST(pl.consolidated_json->>'CalculatedEPS' AS NUMERIC) - CAST(pl.consolidated_json->>'AdjustedDilutedEPS' AS NUMERIC)) /
+                CAST(pl.consolidated_json->>'AdjustedDilutedEPS' AS NUMERIC)
+            ) * 100, 2)
+        ELSE NULL
+    END AS consolidated_EPS_pct_diff,
+
+    -- % Difference: standalone_CalculatedEPS vs standalone_EPS_Computed
+    CASE 
+        WHEN 
+            ROUND(
+                CAST(pl.standalone_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+                NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 2
+            ) != 0
+        THEN ROUND((
+            (CAST(pl.standalone_json->>'CalculatedEPS' AS NUMERIC) - 
+             ROUND(CAST(pl.standalone_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+                   NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 2))
+            / ROUND(CAST(pl.standalone_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+                   NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 2)
+        ) * 100, 2)
+        ELSE NULL
+    END AS standalone_Calc_vs_Computed_pct_diff,
+
+    -- % Difference: consolidated_CalculatedEPS vs consolidated_EPS_Computed
+    CASE 
+        WHEN 
+            ROUND(
+                CAST(pl.consolidated_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+                NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 2
+            ) != 0
+        THEN ROUND((
+            (CAST(pl.consolidated_json->>'CalculatedEPS' AS NUMERIC) - 
+             ROUND(CAST(pl.consolidated_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+                   NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 2))
+            / ROUND(CAST(pl.consolidated_json->>'ProfitLossForPeriodForEPS' AS NUMERIC) / 
+                   NULLIF(CAST(ss.shareholding_pattern->>'NumberOfShares' AS NUMERIC), 0), 2)
+        ) * 100, 2)
+        ELSE NULL
+    END AS consolidated_Calc_vs_Computed_pct_diff,
+
+    -- Match or Do not match based on difference less than 5%
+    CASE
+        WHEN CAST(pl.standalone_json->>'AdjustedEPS' AS NUMERIC) = 0 THEN 'Do not match'
+        WHEN ABS(
+            (CAST(pl.standalone_json->>'CalculatedEPS' AS NUMERIC) - CAST(pl.standalone_json->>'AdjustedEPS' AS NUMERIC))
+            / CAST(pl.standalone_json->>'AdjustedEPS' AS NUMERIC)
+            ) < 0.05 THEN 'Match'
+        ELSE 'Do not match'
+    END AS standalone_EPS_match_status,
+
+    -- Corporate action check
+    CASE 
+        WHEN sbu.stock_symbol IS NOT NULL THEN 'Yes'
+        ELSE 'No'
+    END AS corporate_action,
+
+    -- Market cap from company_profiles
+    cp.market_cap,
+
+    -- Exclude_quarter flag
+    CASE
+        WHEN
+            LENGTH(TRIM(SPLIT_PART(pl.date_header, ' ', 2))) = 4
+            AND SPLIT_PART(pl.date_header, ' ', 2) ~ '^\d{4}$'
+            AND CAST(SPLIT_PART(pl.date_header, ' ', 2) AS INTEGER) <= 2023
+            AND LOWER(pl.period) LIKE '%quarterly%'
+        THEN 'Yes'
+        ELSE NULL
+    END AS Exclude_quarter
+
+FROM
+    profit_losses pl
+LEFT JOIN (
+    SELECT DISTINCT stock_symbol FROM utils.split_bonus_utils
+) sbu ON pl.stock_symbol = sbu.stock_symbol
+
+LEFT JOIN shareholder_summaries ss
+    ON pl.stock_symbol = ss.stock_symbol
+    AND pl.date_header = ss.date_header
+
+LEFT JOIN company_profiles cp
+    ON pl.stock_symbol = cp.stock_symbol
+
+WHERE
+    (pl.standalone_json->>'CalculatedEPS') IS NOT NULL
+    OR (pl.consolidated_json->>'CalculatedEPS') IS NOT NULL
+
+ORDER BY
+    pl.timestamp DESC;",0 0 * * *,,TRUE
+18.0,"SQl to identify where bonus or split is not applied.
+Joined with generic data table.","WITH generic_symbols AS (
+  SELECT  
+    json_data.key AS stock_symbol
+  FROM generic_data gd,
+       LATERAL jsonb_each_text(gd.time_map) AS json_data(key, value)
+),
+filtered_symbols AS (
+  SELECT DISTINCT stock_symbol
+  FROM utils.split_bonus_utils
+  WHERE stock_symbol IN (SELECT stock_symbol FROM generic_symbols)
+),
+filtered_data AS (
+  SELECT ss.* 
+  FROM shareholder_summaries ss
+  INNER JOIN filtered_symbols fs ON ss.stock_symbol = fs.stock_symbol
+),
+ordered_data AS (
+  SELECT
+    fd.stock_symbol,
+    fd.to_date,
+    (fd.shareholding_pattern ->> 'NumberOfShares')::BIGINT AS number_of_shares,
+    fd.shareholding_pattern ->> 'NumberOfSharesOriginal' AS number_of_shares_original,
+    LAG((fd.shareholding_pattern ->> 'NumberOfShares')::BIGINT) OVER (
+      PARTITION BY fd.stock_symbol
+      ORDER BY fd.to_date DESC
+    ) AS prev_number_of_shares
+  FROM filtered_data fd
+),
+all_combinations AS (
+  SELECT
+    od.stock_symbol,
+    od.to_date,
+    od.number_of_shares,
+    od.number_of_shares_original,
+    od.prev_number_of_shares,
+    sbu.ex_date,
+    sbu.corp_action,
+    sbu.numerator,
+    sbu.denominator,
+    sbu.comments  -- Added the comments field here
+  FROM ordered_data od
+  CROSS JOIN utils.split_bonus_utils sbu
+  WHERE od.stock_symbol = sbu.stock_symbol
+    AND od.prev_number_of_shares IS NOT NULL
+    AND od.to_date > sbu.ex_date
+    AND (
+      DATE_PART('year', AGE(od.to_date, sbu.ex_date)) * 12 + 
+      DATE_PART('month', AGE(od.to_date, sbu.ex_date))
+    ) <= 4  -- Only include if difference is within 4 months
+),
+ratio_calc AS (
+  SELECT
+    ac.stock_symbol,
+    ac.to_date,
+    ac.ex_date,
+    ac.number_of_shares,
+    ac.number_of_shares_original,
+    ac.prev_number_of_shares,
+    ac.corp_action,
+    ac.numerator,
+    ac.denominator,
+    ac.comments,  -- Added comments here as well
+    CASE 
+      WHEN ac.number_of_shares <> 0 
+      THEN ROUND(CAST(ac.prev_number_of_shares AS NUMERIC) / ac.number_of_shares, 4)
+      ELSE NULL
+    END AS ratio,
+    DATE_PART('year', AGE(ac.to_date, ac.ex_date)) * 12 + DATE_PART('month', AGE(ac.to_date, ac.ex_date)) AS months_diff,
+    CASE
+      WHEN ac.corp_action = 'Bonus' OR ac.corp_action = 'Rights' THEN ROUND(1 + CAST(ac.numerator AS NUMERIC) / ac.denominator, 4)
+      WHEN ac.corp_action = 'Split' THEN ROUND(CAST(ac.numerator AS NUMERIC) / ac.denominator, 4)
+      ELSE NULL
+    END AS multiplier
+  FROM all_combinations ac
+),
+final_result AS (
+  SELECT * ,
+         ROUND(ABS(ratio - multiplier) / multiplier * 100, 2) AS percent_diff,
+         ROUND(ABS(prev_number_of_shares - number_of_shares) * 100.0 / number_of_shares, 2) AS shares_percent_diff
+  FROM ratio_calc
+)
+SELECT 
+    stock_symbol,
+    to_date,
+    ex_date,
+    corp_action,
+    number_of_shares,
+    number_of_shares_original,
+    prev_number_of_shares,
+    ratio,
+    multiplier,
+    percent_diff,
+    months_diff,
+    comments  -- Finally selecting the comments field
+FROM final_result
+WHERE ratio IS NOT NULL
+  AND multiplier IS NOT NULL
+  AND ratio <> 1
+  AND percent_diff <= 10
+ORDER BY stock_symbol, to_date DESC, ex_date DESC;",0 0 * * *,,TRUE
+19.0,Joined with generic data table and get % increase for each row.,"WITH generic_symbols AS (
+  SELECT json_data.key AS stock_symbol
+  FROM generic_data gd
+  JOIN LATERAL jsonb_each_text(gd.time_map) AS json_data(key, value) ON true
+),
+filtered_data AS (
+  SELECT ss.*
+  FROM shareholder_summaries ss
+  INNER JOIN generic_symbols gs ON ss.stock_symbol = gs.stock_symbol
+),
+ordered_data AS (
+  SELECT
+    fd.stock_symbol,
+    fd.to_date,
+    (fd.shareholding_pattern ->> 'NumberOfShares')::BIGINT AS number_of_shares,
+    fd.shareholding_pattern ->> 'NumberOfSharesOriginal' AS number_of_shares_original,
+    LAG((fd.shareholding_pattern ->> 'NumberOfShares')::BIGINT) OVER (
+      PARTITION BY fd.stock_symbol
+      ORDER BY fd.to_date DESC
+    ) AS prev_number_of_shares
+  FROM filtered_data fd
+),
+with_percent_increase AS (
+  SELECT
+    stock_symbol,
+    to_date,
+    number_of_shares,
+    number_of_shares_original,
+    prev_number_of_shares,
+    ROUND((number_of_shares - prev_number_of_shares) * 100.0 / prev_number_of_shares, 2) AS shares_percent_increase
+  FROM ordered_data
+  WHERE prev_number_of_shares IS NOT NULL
+    AND prev_number_of_shares > 0
+)
+SELECT
+  wpi.stock_symbol,
+  wpi.to_date,
+  wpi.number_of_shares,
+  wpi.number_of_shares_original,
+  wpi.prev_number_of_shares,
+  wpi.shares_percent_increase,
+  sbu.corp_action,
+  sbu.numerator,
+  sbu.denominator,
+  sbu.ex_date,
+  sbu.ex_date_override,
+  sbu.comments,
+  cp.market_cap,
+
+  -- Calculate multiplier
+  CASE
+    WHEN sbu.corp_action IN ('Bonus', 'Rights') AND sbu.denominator != 0 THEN
+      ROUND(1 + sbu.numerator::NUMERIC / sbu.denominator, 4)
+    WHEN sbu.corp_action = 'Split' AND sbu.denominator != 0 THEN
+      ROUND(sbu.numerator::NUMERIC / sbu.denominator, 4)
+    ELSE NULL
+  END AS multiplier,
+
+  -- Share ratios
+  ROUND(wpi.number_of_shares::NUMERIC / NULLIF(wpi.prev_number_of_shares, 0), 4) AS share_ratio,
+  ROUND(wpi.prev_number_of_shares::NUMERIC / NULLIF(wpi.number_of_shares, 0), 4) AS rev_share_ratio,
+
+  -- Check conditions
+  CASE
+    WHEN ROUND(wpi.number_of_shares::NUMERIC / NULLIF(wpi.prev_number_of_shares, 0), 4) =
+         CASE
+           WHEN sbu.corp_action IN ('Bonus', 'Rights') AND sbu.denominator != 0 THEN
+             ROUND(1 + sbu.numerator::NUMERIC / sbu.denominator, 4)
+           WHEN sbu.corp_action = 'Split' AND sbu.denominator != 0 THEN
+             ROUND(sbu.numerator::NUMERIC / sbu.denominator, 4)
+           ELSE NULL
+         END THEN 'TRUE'
+    ELSE ''
+  END AS check_1,
+
+  CASE
+    WHEN ROUND(wpi.prev_number_of_shares::NUMERIC / NULLIF(wpi.number_of_shares, 0), 4) =
+         CASE
+           WHEN sbu.corp_action IN ('Bonus', 'Rights') AND sbu.denominator != 0 THEN
+             ROUND(1 + sbu.numerator::NUMERIC / sbu.denominator, 4)
+           WHEN sbu.corp_action = 'Split' AND sbu.denominator != 0 THEN
+             ROUND(sbu.numerator::NUMERIC / sbu.denominator, 4)
+           ELSE NULL
+         END THEN 'TRUE'
+    ELSE ''
+  END AS check_2,
+
+  -- Month difference between to_date and ex_date
+  DATE_PART('year', wpi.to_date) * 12 + DATE_PART('month', wpi.to_date) -
+  (DATE_PART('year', sbu.ex_date) * 12 + DATE_PART('month', sbu.ex_date)) AS month_diff,
+
+  -- Direction of change
+  CASE
+    WHEN wpi.shares_percent_increase > 0 THEN 'Increase'
+    WHEN wpi.shares_percent_increase < 0 THEN 'Decrease'
+    ELSE 'No Change'
+  END AS change_direction
+
+FROM with_percent_increase wpi
+LEFT JOIN utils.split_bonus_utils sbu ON wpi.stock_symbol = sbu.stock_symbol
+LEFT JOIN company_profiles cp ON wpi.stock_symbol = cp.stock_symbol
+WHERE ABS(wpi.shares_percent_increase) > 5
+ORDER BY wpi.shares_percent_increase DESC;",0 0 * * *,,TRUE
