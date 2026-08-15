@@ -1,8 +1,6 @@
 name: Data Validation Pipeline
 on:
-  schedule:
-    - cron: '0 * * * *' # Every hour
-  workflow_dispatch:     # Manual run trigger
+  workflow_dispatch:     # On-demand only -- run manually from the Actions tab
 
 jobs:
   run-validation:
